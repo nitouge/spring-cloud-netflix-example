@@ -10,7 +10,7 @@
 ## 项目结构
 
 ```
-springcloud-demo/
+spring-cloud-netflix-example/
 ├── discovery-server/         # Eureka注册中心
 ├── api-gateway/              # Zuul网关
 ├── user-service/             # 用户服务
