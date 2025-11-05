@@ -1,0 +1,157 @@
+server:
+  port: 8888
+
+spring:
+  application:
+    name: api-gateway
+
+eureka:
+  client:
+    service-url:
+#      defaultZone: http://localhost:8761/eureka/
+      defaultZone: http://admin:123456@localhost:8761/eureka/
+    # 获取服务列表间隔
+    registry-fetch-interval-seconds: 50
+    # 初始实例信息复制到本地缓存的时间
+    initial-instance-info-replication-interval-seconds: 50
+    fetch-registry: true
+    register-with-eureka: true
+  instance:
+    instance-id: ${spring.application.name}:${server.port}
+    prefer-ip-address: true
+    lease-renewal-interval-in-seconds: 50
+    lease-expiration-duration-in-seconds: 100
+    metadata-map:
+      role: gateway
+      version: 1.0
+
+# Zuul核心配置
+zuul:
+  # 全局配置
+  add-proxy-headers: true  # 添加代理头
+  prefix: /api             # 统一对外暴露/api前缀
+  strip-prefix: true       # 转发时去掉前缀
+  retryable: true          # 启用重试
+  # 敏感头信息设置为空，确保Cookie等能够传递
+  sensitive-headers:
+  # 忽略的服务（不通过网关路由）
+  ignored-services: discovery-server
+  # 忽略的模式
+  ignored-patterns: /**/admin/**
+
+  # 路由配置
+  routes:
+    user-service:
+      path: /user/**
+      serviceId: user-service
+      strip-prefix: false
+      sensitive-headers:  # 清空敏感头，确保Cookie等能够传递
+      retryable: true
+    product-service:
+      path: /product/**
+      serviceId: product-service
+      strip-prefix: false
+      sensitive-headers:
+      retryable: true
+    order-service:
+      path: /order/**
+      serviceId: order-service
+      strip-prefix: false
+      sensitive-headers:
+      retryable: true
+  # 预初始化ribbon客户端
+  ribbon:
+    eager-load:
+      enabled: true
+  # 信号量配置
+  semaphore:
+    max-semaphores: 100
+
+# Hystrix配置 - 网关层熔断
+hystrix:
+  command:
+    default:
+      execution:
+        isolation:
+          strategy: THREAD
+          thread:
+            timeoutInMilliseconds: 20000  # 网关超时时间要设置长一些，覆盖所有下游服务
+        timeout:
+          enabled: true
+      circuitBreaker:
+        enabled: true
+        requestVolumeThreshold: 20       # 触发熔断的最小请求数
+        errorThresholdPercentage: 50     # 错误百分比
+        sleepWindowInMilliseconds: 10000 # 熔断时间
+      metrics:
+        rollingStats:
+          timeInMilliseconds: 10000      # 统计窗口时间
+        rollingPercentile:
+          enabled: true
+        healthSnapshot:
+          intervalInMilliseconds: 500
+
+  # 线程池配置
+  threadpool:
+    default:
+      coreSize: 20           # 核心线程数
+      maximumSize: 50        # 最大线程数
+      maxQueueSize: 1000     # 队列大小
+      queueSizeRejectionThreshold: 500 # 队列拒绝阈值
+      keepAliveTimeMinutes: 1
+
+# Ribbon配置 - 网关负载均衡
+ribbon:
+  eureka:
+    enabled: true
+  # 连接超时时间
+  ConnectTimeout: 5000
+  # 读取超时时间
+  ReadTimeout: 10000         # 网关读取超时要覆盖所有下游服务
+  # 对当前实例的重试次数
+  MaxAutoRetries: 0
+  # 切换实例的重试次数
+  MaxAutoRetriesNextServer: 0
+  # 是否对所有操作都重试
+  OkToRetryOnAllOperations: false
+  # 服务器列表刷新间隔
+  ServerListRefreshInterval: 2000
+  # 负载均衡策略
+  NFLoadBalancerRuleClassName: com.netflix.loadbalancer.RoundRobinRule
+  # 可用性检查
+  NIWSServerListFilterClassName: com.netflix.loadbalancer.ServerListSubsetFilter
+
+# 网关特定配置
+#zuul.retry:
+#  enabled: true
+
+# 管理端点配置
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,routes,filters
+      base-path: /actuator
+  endpoint:
+    health:
+      show-details: always
+    routes:
+      enabled: true
+    filters:
+      enabled: true
+
+# 日志配置
+logging:
+  level:
+    com.example: DEBUG
+    com.netflix.zuul: DEBUG
+    com.netflix.eureka: INFO
+    com.netflix.discovery: INFO
+    org.springframework.cloud.netflix.eureka: DEBUG
+    com.netflix.hystrix: INFO
+    com.netflix.loadbalancer: INFO
+    org.springframework.cloud.netflix.zuul: DEBUG
+    # 启用路由调试日志
+    org.springframework.cloud.netflix.zuul.filters: DEBUG
+  pattern:
+    console: '%red(%d{yyyy-MM-dd HH:mm:ss.SSS}) %yellow([%-5p]) %highlight([%t]) %boldMagenta([%C]) %green([%L]) %m%n'

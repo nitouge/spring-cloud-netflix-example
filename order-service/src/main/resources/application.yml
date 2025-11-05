@@ -1,0 +1,204 @@
+server:
+  port: 8083
+
+spring:
+  application:
+    name: order-service
+  datasource:
+    url: jdbc:p6spy:mysql://localhost:3306/netflix_example?useUnicode=true&characterEncoding=utf8&useSSL=false&serverTimezone=Asia/Shanghai
+    username: root
+    password: root@123456
+    driver-class-name: com.p6spy.engine.spy.P6SpyDriver
+#    driver-class-name: com.mysql.cj.jdbc.Driver
+  jpa:
+    hibernate:
+      ddl-auto: update
+    show-sql: false  # 关闭原始的SQL显示
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.MySQL8Dialect
+        format_sql: false
+        # 使用更好的日志输出
+        use_sql_comments: false
+        # 显示统计信息
+        generate_statistics: false
+
+eureka:
+  client:
+    service-url:
+#      defaultZone: http://localhost:8761/eureka/
+      defaultZone: http://admin:123456@localhost:8761/eureka/
+    registry-fetch-interval-seconds: 50
+  instance:
+    instance-id: ${spring.application.name}:${server.port}
+    prefer-ip-address: true
+    lease-renewal-interval-in-seconds: 50
+    lease-expiration-duration-in-seconds: 100
+
+# Feign配置 - 最内层调用
+feign:
+  hystrix:
+    enabled: true  # 开启Feign对Hystrix的支持
+  client:
+    config:
+      default:  # 全局配置
+        connectTimeout: 5000    # 连接超时时间
+        readTimeout: 8000       # 读取超时时间
+        loggerLevel: full       # 日志级别
+        decode404: false        # 重要：不将404解码为null
+        # 重试配置
+        retryer: com.lsj.cloud.order.config.CustomRetryer
+      user-service:  # 特定服务配置
+        connectTimeout: 30000
+        readTimeout: 50000
+        loggerLevel: full
+      product-service:
+        connectTimeout: 30000
+        readTimeout: 50000
+        loggerLevel: full
+  # 压缩配置
+  compression:
+    request:
+      enabled: true
+      mime-types: text/xml,application/xml,application/json
+      min-request-size: 2048
+    response:
+      enabled: true
+  # 编码器/解码器
+  encoder: feign.jackson.JacksonEncoder
+  decoder: feign.jackson.JacksonDecoder
+
+# Hystrix配置 - 订单服务作为消费者需要更完善的熔断配置
+hystrix:
+  command:
+    default:
+      execution:
+        isolation:
+          strategy: THREAD      # 隔离策略：THREAD 或 SEMAPHORE
+          thread:
+            timeoutInMilliseconds: 500000  # 超时时间
+          semaphore:
+            maxConcurrentRequests: 100   # 信号量最大并发数
+        timeout:
+          enabled: true
+      circuitBreaker:
+        enabled: true
+        requestVolumeThreshold: 10       # 熔断触发的最小请求数
+        errorThresholdPercentage: 50     # 错误率阈值
+        sleepWindowInMilliseconds: 10000 # 熔断时间
+      metrics:
+        rollingStats:
+          timeInMilliseconds: 10000      # 统计窗口时间
+        rollingPercentile:
+          enabled: true
+          bucketSize: 100
+          numBuckets: 10
+        healthSnapshot:
+          intervalInMilliseconds: 500
+
+    # 创建订单方法 - 更严格的配置
+    OrderService#createOrder(Long,Long,Integer):
+      execution:
+        isolation:
+          thread:
+            timeoutInMilliseconds: 8000  # 创建订单需要更长时间
+      circuitBreaker:
+        requestVolumeThreshold: 5
+        errorThresholdPercentage: 30     # 错误率阈值更低
+        sleepWindowInMilliseconds: 30000 # 熔断时间更长
+
+    # 获取订单详情方法
+    OrderService#getOrderDetail(Long):
+      execution:
+        isolation:
+          thread:
+            timeoutInMilliseconds: 3000
+
+    # Feign客户端方法配置
+    UserClient#getUserById(Long):
+      execution:
+        isolation:
+          thread:
+            timeoutInMilliseconds: 500000
+      circuitBreaker:
+        sleepWindowInMilliseconds: 15000
+
+    ProductClient#getProductById(Long):
+      execution:
+        isolation:
+          thread:
+            timeoutInMilliseconds: 500000
+
+  # 线程池配置
+  threadpool:
+    default:
+      coreSize: 20
+      maximumSize: 30
+      maxQueueSize: 1000
+      queueSizeRejectionThreshold: 100
+      keepAliveTimeMinutes: 1
+    OrderService:
+      coreSize: 15
+      maximumSize: 25
+    UserClient:
+      coreSize: 10
+      maximumSize: 20
+
+# Ribbon配置 - 订单服务需要调用其他服务，需要完善的负载均衡配置
+ribbon:
+  eureka:
+    enabled: true
+  # 预初始化ribbon客户端
+  eager-load:
+    enabled: true
+    clients: user-service, product-service
+  # 连接超时时间
+  ConnectTimeout: 200000
+  # 读取超时时间
+  ReadTimeout: 500000
+  # 对当前实例的重试次数
+  MaxAutoRetries: 1
+  # 切换实例的重试次数
+  MaxAutoRetriesNextServer: 2
+  # 是否对所有操作都重试
+  OkToRetryOnAllOperations: false
+  # 服务器列表刷新间隔
+  ServerListRefreshInterval: 20000
+  # 负载均衡策略
+  NFLoadBalancerRuleClassName: com.netflix.loadbalancer.RoundRobinRule
+  # 可用性检查
+  NIWSServerListFilterClassName: com.netflix.loadbalancer.ServerListSubsetFilter
+
+  # 特定服务的Ribbon配置
+  user-service:
+    ribbon:
+      ConnectTimeout: 3000
+      ReadTimeout: 5000
+      MaxAutoRetries: 1
+      MaxAutoRetriesNextServer: 1
+      OkToRetryOnAllOperations: false
+      NFLoadBalancerRuleClassName: com.netflix.loadbalancer.RoundRobinRule
+
+  product-service:
+    ribbon:
+      ConnectTimeout: 3000
+      ReadTimeout: 5000
+      MaxAutoRetries: 1
+      MaxAutoRetriesNextServer: 1
+      OkToRetryOnAllOperations: false
+      NFLoadBalancerRuleClassName: com.netflix.loadbalancer.RandomRule
+
+# 日志配置
+logging:
+  level:
+    com.lsj.cloud: DEBUG
+    org.hibernate.SQL: DEBUG
+    org.springframework.cloud.netflix.eureka: DEBUG
+    feign: DEBUG
+    com.netflix.eureka: DEBUG
+    com.netflix.discovery: DEBUG
+    com.netflix.hystrix: DEBUG
+    com.netflx.ribbon: DEBUG
+    com.netflix.loadbalancer: DEBUG
+  pattern:
+    console: '%red(%d{yyyy-MM-dd HH:mm:ss.SSS}) %yellow([%-5p]) %highlight([%t]) %boldMagenta([%C]) %green([%L]) %m%n'

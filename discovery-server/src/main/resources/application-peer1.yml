@@ -1,0 +1,61 @@
+server:
+  port: 8761
+
+spring:
+  application:
+    name: discovery-server
+  # 设置默认用户名密码
+  security:
+    user:
+      name: admin
+      password: 123456
+
+eureka:
+  instance:
+    hostname: localhost
+    prefer-ip-address: true
+    # 实例ID配置
+    instance-id: ${spring.cloud.client.ip-address}:${server.port}
+    # 心跳间隔
+    lease-renewal-interval-in-seconds: 50
+    # 服务失效时间
+    lease-expiration-duration-in-seconds: 100
+    # 元数据
+    metadata-map:
+      cluster: dev
+      version: 1.0
+  client:
+    service-url:
+      defaultZone: http://admin:123456@${eureka.instance.hostname}:8761/eureka/
+    register-with-eureka: false
+    fetch-registry: false
+    # 服务列表刷新间隔
+    registry-fetch-interval-seconds: 50
+  server:
+    # 关闭自我保护模式
+    enable-self-preservation: true
+    # 清理间隔（毫秒）
+    eviction-interval-timer-in-ms: 60000
+    # 响应缓存更新间隔
+    response-cache-update-interval-ms: 30000
+    # 使用只读响应缓存
+    use-read-only-response-cache: true
+
+# 管理端点配置
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics
+  endpoint:
+    health:
+      show-details: always
+
+# 日志配置
+logging:
+  level:
+    com.netflix.eureka: DEBUG
+    com.netflix.discovery: DEBUG
+    org.springframework.cloud.netflix.eureka: DEBUG
+  pattern:
+    console: '%red(%d{yyyy-MM-dd HH:mm:ss.SSS}) %yellow([%-5p]) %highlight([%t]) %boldMagenta([%C]) %green([%L]) %m%n'
